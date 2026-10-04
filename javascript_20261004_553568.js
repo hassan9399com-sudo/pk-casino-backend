@@ -1,0 +1,1 @@
+db.users.updateOne({ phone: "03001234567" }, { $set: { role: "admin" } })
