@@ -21,8 +21,11 @@ module.exports = (io) => {
         token = token.split(' ')[1];
       }
 
+      // JWT Secret (Primary: Env Var, Fallback: Hardcoded Secret)
+      const secret = process.env.JWT_SECRET || 'pk_casino_super_secret_key_777_xyz';
+
       // Verify JWT Token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const decoded = jwt.verify(token, secret);
 
       // Verify User in DB
       const user = await User.findById(decoded.id).select('-password');
