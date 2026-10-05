@@ -5,9 +5,10 @@ module.exports = (io) => {
   // Socket.io Authentication Middleware
   io.use(async (socket, next) => {
     try {
-      // 1. Check auth header or query/auth object
+      // Check auth object, query parameters, or headers
       let token = 
         socket.handshake.auth?.token || 
+        socket.handshake.query?.token || 
         socket.handshake.headers?.authorization || 
         socket.handshake.headers?.Authorization;
 
@@ -15,15 +16,15 @@ module.exports = (io) => {
         return next(new Error('Authentication error: Token missing'));
       }
 
-      // 2. Safely clean Bearer prefix
+      // Safely strip Bearer prefix if present
       if (typeof token === 'string' && token.startsWith('Bearer ')) {
         token = token.split(' ')[1];
       }
 
-      // 3. Verify JWT Secret
+      // Verify JWT Token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-      // 4. Check user existence and status
+      // Verify User in DB
       const user = await User.findById(decoded.id).select('-password');
       if (!user || user.status !== 'active') {
         return next(new Error('Authentication error: User invalid or banned'));
@@ -39,12 +40,12 @@ module.exports = (io) => {
 
   // Socket Connection Handlers
   io.on('connection', (socket) => {
-    console.log(`⚡ Socket Connected: \({socket.user.username || socket.user._id} (\){socket.id})`);
+    console.log(`⚡ Socket Connected: ${socket.user.username || socket.user._id} (${socket.id})`);
 
     // User-specific private room join
     socket.join(`user_${socket.user._id}`);
 
-    // Ping / Pong for heartbeat
+    // Heartbeat Test Event
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
     });
