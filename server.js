@@ -35,7 +35,11 @@ app.use(
 );
 
 // ---------- Routes ----------
+app.get('/', (req, res) => {
+  res.json({ success: true, message: 'PK Casino 777 Backend API is Running!' });
+});
 app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
+
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/wallet', walletRoutes);
 app.use('/api/v1/payments', paymentRoutes);
@@ -57,9 +61,4 @@ connectDB().then(() => {
   server.listen(PORT, () => {
     console.log(`🚀 PK CASINO 777 backend running on port ${PORT}`);
   });
-});app.get('/', (req, res) => {
-  res.json({ success: true, message: 'PK Casino 777 Backend is Live!' });
-});
-app.get('/', (req, res) => {
-  res.json({ success: true, message: 'PK Casino 777 Backend API is Running!' });
 });
