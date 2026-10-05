@@ -5,7 +5,7 @@ module.exports = (io) => {
   // Socket.io Authentication Middleware
   io.use(async (socket, next) => {
     try {
-      // Check auth object, query parameters, or headers
+      // 1. Token Extract (Headers, Query, ya Auth object se)
       let token = 
         socket.handshake.auth?.token || 
         socket.handshake.query?.token || 
@@ -16,18 +16,18 @@ module.exports = (io) => {
         return next(new Error('Authentication error: Token missing'));
       }
 
-      // Safely strip Bearer prefix if present
+      // 2. Bearer prefix clean karein
       if (typeof token === 'string' && token.startsWith('Bearer ')) {
         token = token.split(' ')[1];
       }
 
-      // JWT Secret (Primary: Env Var, Fallback: Hardcoded Secret)
+      // 3. Exact same Secret Key use karein jo HTTP Auth endpoints me istemal ho rahi hai
       const secret = process.env.JWT_SECRET || 'pk_casino_super_secret_key_777_xyz';
 
-      // Verify JWT Token
+      // 4. Token Verify
       const decoded = jwt.verify(token, secret);
 
-      // Verify User in DB
+      // 5. User Check in DB
       const user = await User.findById(decoded.id).select('-password');
       if (!user || user.status !== 'active') {
         return next(new Error('Authentication error: User invalid or banned'));
@@ -43,12 +43,12 @@ module.exports = (io) => {
 
   // Socket Connection Handlers
   io.on('connection', (socket) => {
-    console.log(`⚡ Socket Connected: ${socket.user.username || socket.user._id} (${socket.id})`);
+    console.log(`⚡ Socket Connected: \({socket.user.username || socket.user._id} (\){socket.id})`);
 
-    // User-specific private room join
+    // User Private Room Join (For Live Balance Updates)
     socket.join(`user_${socket.user._id}`);
 
-    // Heartbeat Test Event
+    // Heartbeat / Ping Event
     socket.on('ping', () => {
       socket.emit('pong', { timestamp: Date.now() });
     });
