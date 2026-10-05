@@ -60,3 +60,6 @@ connectDB().then(() => {
 });app.get('/', (req, res) => {
   res.json({ success: true, message: 'PK Casino 777 Backend is Live!' });
 });
+app.get('/', (req, res) => {
+  res.json({ success: true, message: 'PK Casino 777 Backend API is Running!' });
+});
