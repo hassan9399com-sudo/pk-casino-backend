@@ -57,4 +57,6 @@ connectDB().then(() => {
   server.listen(PORT, () => {
     console.log(`🚀 PK CASINO 777 backend running on port ${PORT}`);
   });
+});app.get('/', (req, res) => {
+  res.json({ success: true, message: 'PK Casino 777 Backend is Live!' });
 });
