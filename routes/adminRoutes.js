@@ -3,9 +3,12 @@ const router = express.Router();
 const auth = require('../middleware/auth');
 const admin = require('../middleware/admin');
 const User = require('../models/User');
-const PaymentRequest = require('../models/PaymentRequest');
+const Transaction = require('../models/Transaction');
 const LedgerEntry = require('../models/LedgerEntry');
+const ledgerService = require('../services/ledgerService');
 const ApiError = require('../utils/ApiError');
+
+// ---------- User Management Routes ----------
 
 // Get all users (Admin only)
 router.get('/users', auth, admin, async (req, res, next) => {
@@ -39,13 +42,52 @@ router.patch('/users/:id/status', auth, admin, async (req, res, next) => {
   }
 });
 
-// Get payment requests list
-router.get('/payments', auth, admin, async (req, res, next) => {
+// ---------- Financial & Deposit Management Routes ----------
+
+// Get all pending deposits
+router.get('/deposits/pending', auth, admin, async (req, res, next) => {
   try {
-    const { status } = req.query;
-    const filter = status ? { status } : {};
-    const requests = await PaymentRequest.find(filter).populate('userId', 'username phone');
-    res.json({ success: true, data: requests });
+    const pendingDeposits = await Transaction.find({ type: 'deposit', status: 'pending' })
+      .populate('userId', 'username phone')
+      .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      count: pendingDeposits.length,
+      data: pendingDeposits,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Approve user deposit
+router.post('/deposits/approve', auth, admin, async (req, res, next) => {
+  try {
+    const { transactionId } = req.body;
+
+    if (!transactionId) {
+      throw ApiError.badRequest('Transaction ID is required');
+    }
+
+    const transaction = await Transaction.findById(transactionId);
+    if (!transaction) throw ApiError.notFound('Transaction not found');
+    if (transaction.status !== 'pending') throw ApiError.badRequest('Transaction already processed');
+
+    // 1. Transaction status update
+    transaction.status = 'approved';
+    await transaction.save();
+
+    // 2. User wallet me balance credit karna
+    if (ledgerService.creditUserWallet) {
+      await ledgerService.creditUserWallet(transaction.userId, transaction.amount, 'deposit', transaction._id);
+    }
+
+    res.json({
+      success: true,
+      message: `Deposit of ${transaction.amount} PKR approved successfully.`,
+      data: transaction,
+    });
   } catch (err) {
     next(err);
   }
