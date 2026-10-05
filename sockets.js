@@ -1,19 +1,29 @@
 const jwt = require('jsonwebtoken');
-const User = require('./models/User');
+const User = require('../models/User');
 
 module.exports = (io) => {
   // Socket.io Authentication Middleware
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || socket.handshake.headers?.authorization;
-      
+      // 1. Check auth header or query/auth object
+      let token = 
+        socket.handshake.auth?.token || 
+        socket.handshake.headers?.authorization || 
+        socket.handshake.headers?.Authorization;
+
       if (!token) {
         return next(new Error('Authentication error: Token missing'));
       }
 
-      const cleanToken = token.startsWith('Bearer ') ? token.slice(7) : token;
-      const decoded = jwt.verify(cleanToken, process.env.JWT_SECRET);
-      
+      // 2. Safely clean Bearer prefix
+      if (typeof token === 'string' && token.startsWith('Bearer ')) {
+        token = token.split(' ')[1];
+      }
+
+      // 3. Verify JWT Secret
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // 4. Check user existence and status
       const user = await User.findById(decoded.id).select('-password');
       if (!user || user.status !== 'active') {
         return next(new Error('Authentication error: User invalid or banned'));
@@ -22,13 +32,14 @@ module.exports = (io) => {
       socket.user = user;
       next();
     } catch (err) {
-      next(new Error('Authentication error: Invalid token'));
+      console.error('Socket Auth Error:', err.message);
+      next(new Error(`Authentication error: ${err.message}`));
     }
   });
 
   // Socket Connection Handlers
   io.on('connection', (socket) => {
-    console.log(`⚡ Socket Connected: ${socket.user.username} (${socket.id})`);
+    console.log(`⚡ Socket Connected: \({socket.user.username || socket.user._id} (\){socket.id})`);
 
     // User-specific private room join
     socket.join(`user_${socket.user._id}`);
@@ -39,7 +50,7 @@ module.exports = (io) => {
     });
 
     socket.on('disconnect', () => {
-      console.log(`🔌 Socket Disconnected: ${socket.user.username} (${socket.id})`);
+      console.log(`🔌 Socket Disconnected: (${socket.id})`);
     });
   });
 };
