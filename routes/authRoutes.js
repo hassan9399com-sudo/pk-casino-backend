@@ -6,6 +6,9 @@ const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const ApiError = require('../utils/ApiError');
 
+// Secret Key Fallback Handling (Render Variable Miss Ho Tab Bhi Crashes Na Ho)
+const JWT_SECRET = process.env.JWT_SECRET || 'pk_casino_default_secret_key_777';
+
 // Register Route
 router.post('/register', async (req, res, next) => {
   try {
@@ -30,7 +33,8 @@ router.post('/register', async (req, res, next) => {
     // Create default wallet
     await Wallet.create({ userId: user._id });
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
+    // JWT_SECRET variable variable pass kiya gaya hai
+    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, {
       expiresIn: '7d',
     });
 
@@ -62,7 +66,8 @@ router.post('/login', async (req, res, next) => {
 
     if (user.status !== 'active') throw ApiError.forbidden('Account is banned');
 
-    const token = jwt.sign({ id: user._id, role: user.role }, process.env.JWT_SECRET, {
+    // JWT_SECRET variable variable pass kiya gaya hai
+    const token = jwt.sign({ id: user._id, role: user.role }, JWT_SECRET, {
       expiresIn: '7d',
     });
 
