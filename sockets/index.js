@@ -1,4 +1,4 @@
-// File ke bilkul TOP par add karein (agar pehle se nahi hai):
+
 const User = require('../models/User'); // Apne User model ka sahi path dein
 
 // Socket Event Handler:
