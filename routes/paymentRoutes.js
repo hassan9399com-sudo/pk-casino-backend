@@ -1,73 +1,103 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
-const admin = require('../middleware/admin');
 const PaymentRequest = require('../models/PaymentRequest');
-const ledgerService = require('../services/ledgerService');
-const ApiError = require('../utils/ApiError');
+const Wallet = require('../models/Wallet');
+const auth = require('../middleware/auth');
 
-// Player: Submit deposit or withdrawal request
-router.post('/request', auth, async (req, res, next) => {
+// @route   POST /api/payments/deposit
+// @desc    Submit a new deposit request
+// @access  Private
+router.post('/deposit', auth, async (req, res) => {
   try {
-    const { type, amount, gateway, accountDetails } = req.body;
+    const { amount, paymentMethod, transactionId, proofImage } = req.body;
 
-    if (!['deposit', 'withdrawal'].includes(type)) {
-      throw ApiError.badRequest('Type must be deposit or withdrawal');
-    }
     if (!amount || amount <= 0) {
-      throw ApiError.badRequest('Invalid amount');
+      return res.status(400).json({ success: false, message: 'Invalid deposit amount' });
     }
 
-    if (type === 'withdrawal') {
-      await ledgerService.lockForWithdrawal(req.user._id, amount, 'PENDING_REQ');
+    if (!paymentMethod || !transactionId) {
+      return res.status(400).json({ success: false, message: 'Payment method and Transaction ID are required' });
     }
 
-    const payReq = await PaymentRequest.create({
-      userId: req.user._id,
-      type,
-      amount,
-      gateway,
-      accountDetails,
+    const paymentRequest = new PaymentRequest({
+      userId: req.user._id || req.user.id,
+      type: 'DEPOSIT',
+      amount: Number(amount),
+      paymentMethod,
+      transactionId,
+      proofImage: proofImage || null,
+      status: 'PENDING',
     });
 
-    res.status(201).json({ success: true, data: payReq });
+    await paymentRequest.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Deposit request submitted successfully! Awaiting admin approval.',
+      data: paymentRequest,
+    });
   } catch (err) {
-    next(err);
+    console.error('Deposit Request Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error processing deposit request' });
   }
 });
 
-// Admin: Approve or reject payment request
-router.patch('/:id/status', auth, admin, async (req, res, next) => {
+// @route   POST /api/payments/withdraw
+// @desc    Submit a new withdrawal request
+// @access  Private
+router.post('/withdraw', auth, async (req, res) => {
   try {
-    const { status, remarks } = req.body;
-    const payReq = await PaymentRequest.findById(req.params.id);
+    const { amount, paymentMethod, accountDetails } = req.body;
+    const userId = req.user._id || req.user.id;
 
-    if (!payReq) throw ApiError.notFound('Payment request not found');
-    if (payReq.status !== 'pending') {
-      throw ApiError.badRequest('Request is already processed');
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ success: false, message: 'Invalid withdrawal amount' });
     }
 
-    if (status === 'approved') {
-      if (payReq.type === 'deposit') {
-        await ledgerService.creditMain(payReq.userId, payReq.amount, 'DEPOSIT', payReq._id);
-      } else if (payReq.type === 'withdrawal') {
-        await ledgerService.approveWithdrawal(payReq.userId, payReq.amount, payReq._id);
-      }
-    } else if (status === 'rejected') {
-      if (payReq.type === 'withdrawal') {
-        await ledgerService.rejectWithdrawal(payReq.userId, payReq.amount, payReq._id);
-      }
-    } else {
-      throw ApiError.badRequest('Invalid status');
+    if (!accountDetails) {
+      return res.status(400).json({ success: false, message: 'Account details are required' });
     }
 
-    payReq.status = status;
-    payReq.remarks = remarks || '';
-    await payReq.save();
+    // Check user's available wallet balance
+    const wallet = await Wallet.findOne({ userId });
+    if (!wallet || wallet.balance < amount) {
+      return res.status(400).json({ success: false, message: 'Insufficient wallet balance' });
+    }
 
-    res.json({ success: true, data: payReq });
+    const paymentRequest = new PaymentRequest({
+      userId,
+      type: 'WITHDRAWAL',
+      amount: Number(amount),
+      paymentMethod,
+      accountDetails,
+      status: 'PENDING',
+    });
+
+    await paymentRequest.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Withdrawal request submitted successfully! Awaiting admin processing.',
+      data: paymentRequest,
+    });
   } catch (err) {
-    next(err);
+    console.error('Withdrawal Request Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error processing withdrawal request' });
+  }
+});
+
+// @route   GET /api/payments/my-requests
+// @desc    Get user's payment requests history
+// @access  Private
+router.get('/my-requests', auth, async (req, res) => {
+  try {
+    const userId = req.user._id || req.user.id;
+    const requests = await PaymentRequest.find({ userId }).sort({ createdAt: -1 });
+
+    res.json({ success: true, count: requests.length, data: requests });
+  } catch (err) {
+    console.error('Payment History Error:', err.message);
+    res.status(500).json({ success: false, message: 'Server error fetching payment requests' });
   }
 });
 
