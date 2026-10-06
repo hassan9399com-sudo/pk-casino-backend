@@ -8,7 +8,7 @@ let gameState = {
   currentRoundBets: [], // Stores { userId, amount, selectedOption }
 };
 
-let isLoopRunning = false; // Prevents duplicate timers
+let isLoopRunning = false; // Duplicate timer se bachane ke liye
 
 module.exports = (io) => {
   // --- Socket JWT Middleware ---
@@ -25,7 +25,7 @@ module.exports = (io) => {
     }
   });
 
-  // --- Game Loop (Runs ONLY ONCE) ---
+  // --- Game Loop (Sirf 1 baar chalega) ---
   if (!isLoopRunning) {
     isLoopRunning = true;
     setInterval(async () => {
@@ -48,7 +48,7 @@ module.exports = (io) => {
 
   // --- Connection & Event Handlers ---
   io.on('connection', (socket) => {
-    // Send current game state to newly connected client
+    // Send initial game state on connect
     socket.emit('game_state_init', gameState);
 
     socket.on('place_bet', async (data) => {
@@ -129,10 +129,10 @@ async function resolveRound(io) {
       .filter((bet) => bet.selectedOption === winningOption)
       .map((bet) => {
         const winAmount = bet.amount * winnerMultiplier;
-        return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount } });
+        return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount });
       });
 
-    await Promise.all(payoutPromises); // Runs all database updates together
+    await Promise.all(payoutPromises);
 
     // 4. Broadcast Round Result
     io.emit('round_result', {
