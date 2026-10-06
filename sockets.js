@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User'); // Path verify kar lein
+const User = require('./models/User'); // Path verify kar lein
 
 module.exports = (io) => {
   // Auth Middleware
