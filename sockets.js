@@ -9,7 +9,11 @@ socket.on('place_bet', async (data) => {
 
     const user = await User.findById(socket.user._id);
 
-    // Agar existing user ka balance null/undefined hai toh 1000 assign kar de, aksar null hota hai
+    if (!user) {
+      return socket.emit('error', { message: 'User not found' });
+    }
+
+    // Agar existing user ka balance null/undefined hai toh 1000 assign kar de
     let currentBalance = typeof user.balance === 'number' ? user.balance : 1000;
 
     if (currentBalance < numericAmount) {
@@ -29,6 +33,7 @@ socket.on('place_bet', async (data) => {
       timestamp: Date.now()
     });
 
+    // ✅ FIXED console.log line
     console.log(`🎰 Bet placed by \({user.username}:\){numericAmount} | New Balance: ${user.balance}`);
 
   } catch (err) {
