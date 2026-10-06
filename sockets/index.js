@@ -14,7 +14,10 @@ module.exports = (io) => {
   // --- Socket JWT Middleware ---
   io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.headers.authorization?.split(' ')[1] || socket.handshake.auth?.token;
+      const token =
+        socket.handshake.headers.authorization?.split(' ')[1] ||
+        socket.handshake.auth?.token;
+
       if (!token) return next(new Error('Authentication error: Token missing'));
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -92,14 +95,13 @@ module.exports = (io) => {
           message: 'Bet placed successfully!',
           amount,
           selectedOption,
-          newBalance: updatedUser.balance
+          newBalance: updatedUser.balance,
         });
 
         io.emit('bet_pool_update', {
           totalBets: gameState.currentRoundBets.length,
-          latestBet: { amount, selectedOption }
+          latestBet: { amount, selectedOption },
         });
-
       } catch (err) {
         console.error('Bet Error:', err.message);
         socket.emit('bet_error', { message: 'Internal server error during bet placement' });
@@ -110,41 +112,52 @@ module.exports = (io) => {
 
 // --- Round Outcome & Fast Payout Logic ---
 async function resolveRound(io) {
-  // 1. Generate Weighted Outcome
-  // Red: 0-47 (48%), Black: 48-95 (48%), Green: 96-99 (4%)
-  const rand = Math.floor(Math.random() * 100);
-  let winningOption = 'red';
-  if (rand >= 48 && rand < 96) winningOption = 'black';
-  if (rand >= 96) winningOption = 'green';
+  try {
+    // 1. Generate Weighted Outcome
+    // Red: 0-47 (48%), Black: 48-95 (48%), Green: 96-99 (4%)
+    const rand = Math.floor(Math.random() * 100);
+    let winningOption = 'red';
+    if (rand >= 48 && rand < 96) winningOption = 'black';
+    if (rand >= 96) winningOption = 'green';
 
-  console.log(`🎲 Round Outcome: ${winningOption.toUpperCase()}`);
+    console.log(`🎲 Round Outcome: ${winningOption.toUpperCase()}`);
 
-  // 2. Wait 4 seconds for wheel animation
-  setTimeout(async () => {
-    // 3. Process Payouts Parallelly
-    const multipliers = { red: 2, black: 2, green: 14 };
-    const winnerMultiplier = multipliers[winningOption];
+    // 2. Wait 4 seconds for wheel animation
+    setTimeout(async () => {
+      try {
+        // 3. Process Payouts Parallelly
+        const multipliers = { red: 2, black: 2, green: 14 };
+        const winnerMultiplier = multipliers[winningOption];
 
-    const payoutPromises = gameState.currentRoundBets
-      .filter((bet) => bet.selectedOption === winningOption)
-      .map((bet) => {
-        const winAmount = bet.amount * winnerMultiplier;
-        return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount });
-      });
+        const payoutPromises = gameState.currentRoundBets
+          .filter((bet) => bet.selectedOption === winningOption)
+          .map((bet) => {
+            const winAmount = bet.amount * winnerMultiplier;
+            return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount } });
+          });
 
-    await Promise.all(payoutPromises);
+        await Promise.all(payoutPromises);
 
-    // 4. Broadcast Round Result
-    io.emit('round_result', {
-      winningOption,
-      multiplier: winnerMultiplier
-    });
+        // 4. Broadcast Round Result
+        io.emit('round_result', {
+          winningOption,
+          multiplier: winnerMultiplier,
+        });
+      } catch (payoutErr) {
+        console.error('Error during payout:', payoutErr.message);
+      } finally {
+        // 5. Reset Game Loop
+        gameState.status = 'BETTING';
+        gameState.timeLeft = 15;
+        gameState.currentRoundBets = [];
 
-    // 5. Reset Game Loop
+        io.emit('game_status', { status: 'BETTING', timeLeft: 15 });
+      }
+    }, 4000);
+  } catch (err) {
+    console.error('Error in resolveRound:', err.message);
     gameState.status = 'BETTING';
     gameState.timeLeft = 15;
     gameState.currentRoundBets = [];
-
-    io.emit('game_status', { status: 'BETTING', timeLeft: 15 });
-  }, 4000);
+  }
 }
