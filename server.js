@@ -57,8 +57,14 @@ app.set('io', io);
 
 // ---------- Boot ----------
 const PORT = process.env.PORT || 5000;
-connectDB().then(() => {
-  server.listen(PORT, () => {
-    console.log(`🚀 PK CASINO 777 backend running on port ${PORT}`);
+
+connectDB()
+  .then(() => {
+    server.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 PK CASINO 777 backend running on port ${PORT}`);
+    });
+  })
+  .catch((err) => {
+    console.error('❌ Database Connection Failed:', err.message);
+    process.exit(1);
   });
-});
