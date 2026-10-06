@@ -8,6 +8,8 @@ let gameState = {
   currentRoundBets: [], // Stores { userId, amount, selectedOption }
 };
 
+let isLoopRunning = false; // Prevents duplicate timers
+
 module.exports = (io) => {
   // --- Socket JWT Middleware ---
   io.use(async (socket, next) => {
@@ -23,8 +25,9 @@ module.exports = (io) => {
     }
   });
 
-  // --- Game Loop (Runs Automatically) ---
-  const startGameLoop = () => {
+  // --- Game Loop (Runs ONLY ONCE) ---
+  if (!isLoopRunning) {
+    isLoopRunning = true;
     setInterval(async () => {
       if (gameState.status === 'BETTING') {
         gameState.timeLeft--;
@@ -41,14 +44,11 @@ module.exports = (io) => {
         }
       }
     }, 1000);
-  };
-
-  // Run game loop once server starts
-  startGameLoop();
+  }
 
   // --- Connection & Event Handlers ---
   io.on('connection', (socket) => {
-    // Send initial game state on connect
+    // Send current game state to newly connected client
     socket.emit('game_state_init', gameState);
 
     socket.on('place_bet', async (data) => {
@@ -108,7 +108,7 @@ module.exports = (io) => {
   });
 };
 
-// --- Round Outcome & Payout Logic ---
+// --- Round Outcome & Fast Payout Logic ---
 async function resolveRound(io) {
   // 1. Generate Weighted Outcome
   // Red: 0-47 (48%), Black: 48-95 (48%), Green: 96-99 (4%)
@@ -121,16 +121,18 @@ async function resolveRound(io) {
 
   // 2. Wait 4 seconds for wheel animation
   setTimeout(async () => {
-    // 3. Process Payouts
+    // 3. Process Payouts Parallelly
     const multipliers = { red: 2, black: 2, green: 14 };
     const winnerMultiplier = multipliers[winningOption];
 
-    for (const bet of gameState.currentRoundBets) {
-      if (bet.selectedOption === winningOption) {
+    const payoutPromises = gameState.currentRoundBets
+      .filter((bet) => bet.selectedOption === winningOption)
+      .map((bet) => {
         const winAmount = bet.amount * winnerMultiplier;
-        await User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount } });
-      }
-    }
+        return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount } });
+      });
+
+    await Promise.all(payoutPromises); // Runs all database updates together
 
     // 4. Broadcast Round Result
     io.emit('round_result', {
