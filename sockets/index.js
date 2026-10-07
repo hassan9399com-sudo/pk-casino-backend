@@ -110,35 +110,83 @@ module.exports = (io) => {
   });
 };
 
-// --- Round Outcome & Fast Payout Logic ---
+// --- Controlled House Edge Outcome & Controlled Payout Logic ---
 async function resolveRound(io) {
   try {
-    // 1. Generate Weighted Outcome
-    // Red: 0-47 (48%), Black: 48-95 (48%), Green: 96-99 (4%)
-    const rand = Math.floor(Math.random() * 100);
-    let winningOption = 'red';
-    if (rand >= 48 && rand < 96) winningOption = 'black';
-    if (rand >= 96) winningOption = 'green';
+    const bets = gameState.currentRoundBets;
 
-    console.log(`🎲 Round Outcome: ${winningOption.toUpperCase()}`);
+    // Direct Default Option (Agar koi bet na lagi ho)
+    if (bets.length === 0) {
+      const options = ['red', 'black', 'green'];
+      const defaultOption = options[Math.floor(Math.random() * options.length)];
+      
+      setTimeout(() => {
+        io.emit('round_result', { winningOption: defaultOption, multiplier: 2 });
+        resetGameState(io);
+      }, 4000);
+      return;
+    }
 
-    // 2. Wait 4 seconds for wheel animation
+    // 1. Total Pool & Company Profit (35% Average House Cut)
+    const totalPot = bets.reduce((sum, b) => sum + b.amount, 0);
+    const houseEdge = 0.35; // 35% Safe House Cut
+    const maxPayoutBudget = totalPot * (1 - houseEdge); // 65% Budget available for winners
+
+    const multipliers = { red: 2, black: 2, green: 14 };
+    const options = ['red', 'black', 'green'];
+
+    // 2. Wo options filter karein jin par total payout budget se kam ban raha ho
+    let safeOptions = options.filter(opt => {
+      const optionPayout = bets
+        .filter(b => b.selectedOption === opt)
+        .reduce((sum, b) => sum + (b.amount * multipliers[opt]), 0);
+
+      return optionPayout <= maxPayoutBudget;
+    });
+
+    // Agar sab options budget se bahar hon, sab se kam payout wala option chunein
+    let winningOption;
+    if (safeOptions.length > 0) {
+      winningOption = safeOptions[Math.floor(Math.random() * safeOptions.length)];
+    } else {
+      winningOption = options.reduce((minOpt, opt) => {
+        const payout = bets
+          .filter(b => b.selectedOption === opt)
+          .reduce((sum, b) => sum + (b.amount * multipliers[opt]), 0);
+        
+        const minPayout = bets
+          .filter(b => b.selectedOption === minOpt)
+          .reduce((sum, b) => sum + (b.amount * multipliers[minOpt]), 0);
+
+        return payout < minPayout ? opt : minOpt;
+      }, options[0]);
+    }
+
+    // 3. Winning Options ke bets me se 1 se 6 Winners Cap Lagana
+    let winnerBets = bets.filter(b => b.selectedOption === winningOption);
+    
+    // Random 1 se 6 winners limit
+    const maxWinners = Math.min(6, Math.max(1, Math.floor(Math.random() * 6) + 1));
+    
+    // Shuffle winners list
+    winnerBets = winnerBets.sort(() => 0.5 - Math.random()).slice(0, maxWinners);
+
+    console.log(`🎲 Calculated Winning Option: ${winningOption.toUpperCase()} | Active Winners Count: ${winnerBets.length}`);
+
+    // 4. Wait 4 seconds for wheel animation
     setTimeout(async () => {
       try {
-        // 3. Process Payouts Parallelly
-        const multipliers = { red: 2, black: 2, green: 14 };
         const winnerMultiplier = multipliers[winningOption];
 
-        const payoutPromises = gameState.currentRoundBets
-          .filter((bet) => bet.selectedOption === winningOption)
-          .map((bet) => {
-            const winAmount = bet.amount * winnerMultiplier;
-            return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount } });
-          });
+        // Selected capped winners ko payout dein
+        const payoutPromises = winnerBets.map((bet) => {
+          const winAmount = bet.amount * winnerMultiplier;
+          return User.findByIdAndUpdate(bet.userId, { $inc: { balance: winAmount } });
+        });
 
         await Promise.all(payoutPromises);
 
-        // 4. Broadcast Round Result
+        // Broadcast Round Result
         io.emit('round_result', {
           winningOption,
           multiplier: winnerMultiplier,
@@ -146,18 +194,20 @@ async function resolveRound(io) {
       } catch (payoutErr) {
         console.error('Error during payout:', payoutErr.message);
       } finally {
-        // 5. Reset Game Loop
-        gameState.status = 'BETTING';
-        gameState.timeLeft = 15;
-        gameState.currentRoundBets = [];
-
-        io.emit('game_status', { status: 'BETTING', timeLeft: 15 });
+        resetGameState(io);
       }
     }, 4000);
+
   } catch (err) {
     console.error('Error in resolveRound:', err.message);
-    gameState.status = 'BETTING';
-    gameState.timeLeft = 15;
-    gameState.currentRoundBets = [];
+    resetGameState(io);
   }
+}
+
+// Reset Game Loop State Helper Function
+function resetGameState(io) {
+  gameState.status = 'BETTING';
+  gameState.timeLeft = 15;
+  gameState.currentRoundBets = [];
+  io.emit('game_status', { status: 'BETTING', timeLeft: 15 });
 }
